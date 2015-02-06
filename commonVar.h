@@ -36,16 +36,6 @@ typedef struct{
 
 
 
-/**
-* Typedef struct containing configuration info
-*/
-typedef struct
-{
-  uint8_t rolde_id;
-  uint8_t frame_mode;
-  uint8_t mac_addr;
-} configuration;
-
 /*
 ** ==========================================================================
 **                       Extern Global variables
