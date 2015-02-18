@@ -18,23 +18,30 @@
 #define __COMON_VAR_H__
 
 #ifndef ARDUINO
-typedef unsigned __int8 uint8_t;
+typedef unsigned __int8  uint8_t;
+typedef unsigned __int16 uint16_t;
 typedef unsigned __int32 uint32_t;
 #endif
-
-typedef enum { wdt_16ms = 0, wdt_32ms, wdt_64ms, wdt_128ms, wdt_250ms, wdt_500ms, wdt_1s, wdt_2s, wdt_4s, wdt_8s } wdt_prescalar_e;
 
 
 /**
  * Typedef struct containing the payload structure
- * Size: 28 bytes
+ * Size: 6 bytes
 */
 typedef struct{
-  unsigned long ms;    
-  unsigned long counter;
-}  payload_t;  
+  uint8_t data[2];         // 2 bytes
+  unsigned long seqNum;    // 4
+}  pload;  
 
-
+/**
+ * Typedef struct containing the header structure
+ * Size: 2 bytes
+*/
+typedef struct{
+  uint8_t  type    :4;    // 4 bits
+  uint8_t srcAddr  :6;    // 6 bits
+  uint8_t destAddr :6;    // 6 bits
+}  head;
 
 /*
 ** ==========================================================================

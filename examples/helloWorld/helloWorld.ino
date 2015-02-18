@@ -39,8 +39,6 @@
 */
 
 RF24 radio(9,10);      // nRF24L01(+) radio attached using Getting Started board 
-// Radio pipe addresses for the 2 nodes to communicate.
-const uint64_t pipes[2] = { 0xF0F0F0F0E1LL, 0xF0F0F0F0D2LL };
 
 
 /*==============================================================================
@@ -60,26 +58,6 @@ void setup(void)
   
   // Start the transceiver  
   radio.begin();
-  // Set data rate
-  radio.setDataRate(RF24_1MBPS);
-  // Set the channel we want to use
-  radio.setChannel(17);
-  // Set the power level
-  radio.setPALevel(RF24_PA_LOW);
-  // Set the CRC check level
-  radio.setCRCLength(RF24_CRC_8);
-  // set the delay between retries (uS) & # of retries
-  radio.setRetries(15,15);
-  // fixed payload size of 9 bytes
-  radio.setPayloadSize(9);
-  //Open read/write pipelines
-  radio.openWritingPipe(pipes[0]);
-  radio.openReadingPipe(1,pipes[1]);
-
-  //Start the listening
-  radio.startListening();
-
-  radio.printDetails();
 }
 
 
