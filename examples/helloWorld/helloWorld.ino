@@ -49,6 +49,7 @@ typedef enum { role_sender = 1, role_receiver } role_e;
 const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
   
 role_e role = role_sender;
+unsigned char macAdd = 1;
 
 struct statistics
 {
@@ -57,6 +58,11 @@ struct statistics
   
   uint16_t total_tx;
   uint16_t total_rx;
+  
+  uint16_t fromA;
+  uint16_t fromB;
+  
+  uint16_t macCDCnt;
   
 };
 
@@ -74,6 +80,8 @@ struct frame
 statistics stats;
 
 unsigned char seq_id = 0;
+
+int macCD = 1;
 
 /*==============================================================================
 ** Function...: setup
@@ -113,7 +121,7 @@ void setup(void)
 
   radio.printDetails();
   
-  // the function is called evry routineTime interval
+  // the function is called every routineTime interval
   timer.setInterval(routineTime, printOut);
 }
 
@@ -139,29 +147,46 @@ void loop(void)
   if (role == role_sender)
   {
     fr.destination = 0;
-    fr.source = 2;
+    fr.source = macAdd;
     seq_id++;
     fr.sequence = seq_id;
     fr.type = 1;
     
-    unsigned long time = millis();
-    radio.write( &fr, sizeof(fr) );
-    stats.total_tx++;
-
-    if ( radio.isAckPayloadAvailable() )
-    {
-      radio.read(&fr,sizeof(fr));
-      stats.successful_tx++;
-      
-      //sprintf(s,"ACK: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
-      //Serial.println(s);
-    }
-    else
-    {
-      stats.failed_tx++;
-    }
     
-    //delay(2);
+    macCD = 1;
+    while(macCD)
+    {
+      // Listen for a little
+      radio.startListening();
+      delayMicroseconds(128);
+      radio.stopListening();
+      // Did we get a carrier?
+      if ( radio.testCarrier() )
+      {
+        stats.macCDCnt++;
+      }
+      else
+      {
+        macCD=0;
+        radio.write( &fr, sizeof(fr) );
+        stats.total_tx++;
+
+        if ( radio.isAckPayloadAvailable() )
+        {
+          radio.read(&fr,sizeof(fr));
+          stats.successful_tx++;
+          
+          //sprintf(s,"ACK: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
+          //Serial.println(s);
+        }
+        else
+        {
+          stats.failed_tx++;
+        }
+      }
+    }
+
+    delay(100);
   }
 
   if ( role == role_receiver )
@@ -193,7 +218,15 @@ void loop(void)
       
       radio.writeAckPayload( 1, &fr_ack, sizeof(fr_ack) );
       
-      
+      if (fr.source == 1)
+      {
+        stats.fromA++;
+      }
+      else if (fr.source == 2)
+      {
+        stats.fromB++;
+        
+      }
       
     }
   }
@@ -211,11 +244,26 @@ void printOut(void)
 {
   char s[100];
   
-  sprintf(s," %d %d %d %d ", stats.total_rx, stats.total_tx, stats.successful_tx, stats.failed_tx);
-  Serial.println(s);
+  if( role == role_receiver )
+  {
+    sprintf(s,"%d %d %d %d %d %d ",stats.fromA, stats.fromB, stats.total_rx, stats.total_tx, stats.successful_tx, stats.failed_tx);
+    Serial.println(s);
+    
+    
+  }
+  else
+  {
+    sprintf(s," %d %d %d %d %d", stats.total_rx, stats.total_tx, stats.successful_tx, stats.failed_tx, stats.macCDCnt);
+    Serial.println(s);
+  }
   
   stats.total_rx = 0;
   stats.total_tx = 0;
   stats.failed_tx = 0;
   stats.successful_tx = 0;
+  stats.fromA = 0;
+  stats.fromB = 0;
+  stats.macCDCnt = 0;
+  
+  
 }
