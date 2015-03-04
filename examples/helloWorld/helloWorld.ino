@@ -20,6 +20,7 @@
 ** =============================================================================
 */
 
+
 #include "SimpleTimer.h"
 #include <SPI.h>
 #include "nRF24L01.h"
@@ -49,7 +50,7 @@ typedef enum { role_sender = 1, role_receiver } role_e;
 const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
   
 role_e role = role_sender;
-unsigned char macAdd = 1;
+unsigned char macAdd = 2;
 
 struct statistics
 {
@@ -63,25 +64,24 @@ struct statistics
   uint16_t fromB;
   
   uint16_t macCDCnt;
-  
 };
 
-
-
-struct frame
+typedef struct 
 {
   unsigned char destination;
   unsigned char source;
   unsigned char sequence;
   unsigned char type;
   unsigned char data[28];
-};
+}dataFrame;
 
 statistics stats;
 
 unsigned char seq_id = 0;
 
 int macCD = 1;
+
+dataFrame fr;
 
 /*==============================================================================
 ** Function...: setup
@@ -137,10 +137,10 @@ void setup(void)
 void loop(void)
 {
   static uint32_t message_count = 0;
+ 
   
-  frame fr;
   char s[100];
-  
+  int ret = 1;
   
   timer.run();
 
@@ -152,64 +152,27 @@ void loop(void)
     fr.sequence = seq_id;
     fr.type = 1;
     
-    
-    macCD = 1;
-    while(macCD)
-    {
-      // Listen for a little
-      radio.startListening();
-      delayMicroseconds(128);
-      radio.stopListening();
-      // Did we get a carrier?
-      if ( radio.testCarrier() )
-      {
-        stats.macCDCnt++;
-      }
-      else
-      {
-        macCD=0;
-        radio.write( &fr, sizeof(fr) );
-        stats.total_tx++;
+    ret = mediumAccess();
 
-        if ( radio.isAckPayloadAvailable() )
-        {
-          radio.read(&fr,sizeof(fr));
-          stats.successful_tx++;
-          
-          //sprintf(s,"ACK: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
-          //Serial.println(s);
-        }
-        else
-        {
-          stats.failed_tx++;
-        }
-      }
-    }
-
-    delay(100);
+   // delay(100);
   }
 
   if ( role == role_receiver )
   {
     if ( radio.available() )
     {
-      
-      
       static unsigned long got_time;
       bool done = false;
       while (!done)
       {
         done = radio.read( &fr, sizeof(fr) );
         stats.total_rx++;
-        
         //sprintf(s,"PL: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
         //Serial.println(s);
-        
       }
       
       
-      
-      frame fr_ack;
+      dataFrame fr_ack;
       fr_ack.source = 0;
       fr_ack.destination = fr.source;
       fr_ack.type = 2;
@@ -218,6 +181,7 @@ void loop(void)
       
       radio.writeAckPayload( 1, &fr_ack, sizeof(fr_ack) );
       
+      
       if (fr.source == 1)
       {
         stats.fromA++;
@@ -225,16 +189,56 @@ void loop(void)
       else if (fr.source == 2)
       {
         stats.fromB++;
-        
       }
-      
     }
   }
 }
 
 
 /*==============================================================================
-** Function...: loop
+** Function...: MAC
+** Return.....: void
+** Description: main function
+** Created....: 18.2.2015 by Achuthan
+** Modified...: dd.mm.yyyy by nn
+==============================================================================*/
+int mediumAccess(void)
+{
+  macCD = 1;
+  while(macCD)
+  {
+    // Listen for a little
+    radio.startListening();
+    delayMicroseconds(128);
+    radio.stopListening();
+    // Did we get a carrier?
+    if ( radio.testCarrier() )
+    {
+      stats.macCDCnt++;
+    }
+    else
+    {
+      macCD=0;
+      radio.write( &fr, sizeof(fr) );
+      stats.total_tx++;
+
+      if ( radio.isAckPayloadAvailable() )
+      {
+        radio.read(&fr,sizeof(fr));
+        stats.successful_tx++;
+      }
+      else
+      {
+        stats.failed_tx++;
+        delayMicroseconds(200);
+      }
+    }
+  }
+  return 0;
+}
+
+/*==============================================================================
+** Function...: printOut
 ** Return.....: void
 ** Description: main function
 ** Created....: 18.2.2015 by Achuthan
