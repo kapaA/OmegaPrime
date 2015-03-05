@@ -28,12 +28,28 @@
 #include "printf.h"
 
 void printOut(void);
-
+int backOff(void);
 /*
 ** =============================================================================
 **                   DEFINES
 ** =============================================================================
 */
+
+#define DIFS      40
+#define SLOT_TIME  2
+
+/**
+ * Enumeration containing the commands for channel access
+*/
+typedef enum
+{
+    WAIT_DIFS = 0,
+    PERFORM_BACKOFF = 1,
+    SEND_RTS = 2,
+    WAIT_FOR_CTS = 3,
+    SEND_PAY = 4,
+    WAIT_FOR_ACK = 5
+}CSMA_CMD;
 
 /*
 ** =============================================================================
@@ -50,7 +66,7 @@ typedef enum { role_sender = 1, role_receiver } role_e;
 const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
   
 role_e role = role_sender;
-unsigned char macAdd = 2;
+unsigned char macAdd =2;
 
 struct statistics
 {
@@ -93,7 +109,7 @@ dataFrame fr;
 
 void setup(void)
 {
-
+  randomSeed(analogRead(0));
   int routineTime = 1000;
   
   Serial.begin(57600);
@@ -103,8 +119,7 @@ void setup(void)
 
 
   radio.begin();
-  radio.enableAckPayload();
-
+  //radio.enableAckPayload();
 
   if ( role == role_sender )
   {
@@ -151,10 +166,17 @@ void loop(void)
     seq_id++;
     fr.sequence = seq_id;
     fr.type = 1;
+    channelAccess(WAIT_DIFS);
+    ret = channelAccess(PERFORM_BACKOFF);
     
-    ret = mediumAccess();
+    if(0==ret)
+    {
+      radio.write( &fr, sizeof(fr) );
+      stats.total_tx++;
+    }
+    //ret = sendPacket();
 
-   // delay(100);
+    //delay(1);
   }
 
   if ( role == role_receiver )
@@ -171,7 +193,7 @@ void loop(void)
         //Serial.println(s);
       }
       
-      
+      /*
       dataFrame fr_ack;
       fr_ack.source = 0;
       fr_ack.destination = fr.source;
@@ -180,7 +202,7 @@ void loop(void)
       fr_ack.sequence = seq_id;
       
       radio.writeAckPayload( 1, &fr_ack, sizeof(fr_ack) );
-      
+      */
       
       if (fr.source == 1)
       {
@@ -196,46 +218,119 @@ void loop(void)
 
 
 /*==============================================================================
-** Function...: MAC
+** Function...: sendPacket
 ** Return.....: void
 ** Description: main function
 ** Created....: 18.2.2015 by Achuthan
 ** Modified...: dd.mm.yyyy by nn
 ==============================================================================*/
-int mediumAccess(void)
+int sendPacket(void)
 {
-  macCD = 1;
-  while(macCD)
-  {
-    // Listen for a little
-    radio.startListening();
-    delayMicroseconds(128);
-    radio.stopListening();
-    // Did we get a carrier?
-    if ( radio.testCarrier() )
-    {
-      stats.macCDCnt++;
-    }
-    else
-    {
-      macCD=0;
-      radio.write( &fr, sizeof(fr) );
-      stats.total_tx++;
+  return 0;
+}
 
-      if ( radio.isAckPayloadAvailable() )
+
+int channelAccess(unsigned char action)
+{
+  int ret = -1;
+  unsigned long time;
+  unsigned long difsDelta=0;
+  
+  switch (action)
+  {
+    case WAIT_DIFS:
+     
+      // Listen for a little
+      radio.startListening();
+      
+      ret = 0;
+      time = micros();
+      difsDelta = micros() - time;
+      while(difsDelta<DIFS)
       {
-        radio.read(&fr,sizeof(fr));
-        stats.successful_tx++;
+        while ( radio.testCarrier() )
+        {
+          //printf(".");
+          time = micros();
+        }
+        difsDelta = micros() - time;
+        //printf("DIFS %lu\n",difsDelta);
+      }
+      //printf("\n");
+    break;
+    
+    case PERFORM_BACKOFF:
+      if(backOff())
+      {
+        //if CD then return:
+        return -2;
+        printf("Carrier Detect\n");
       }
       else
       {
-        stats.failed_tx++;
-        delayMicroseconds(200);
+        //else no CD then do the transmit
+        ret = 0;
+        radio.stopListening();
       }
+    break;
+    
+    default:
+      ret = -3;
+    break;
+  }  
+  return 0;  
+}  
+
+
+int backOff(void)
+{
+  int backofSlot = SLOT_TIME;
+  // Listen for a little
+  radio.startListening();
+  unsigned long time;
+  unsigned long backOffDelta;
+  unsigned int backoffTimer = 0;
+  
+  backoffTimer = random(1, 4); 
+  
+  time = micros();
+  backOffDelta = micros() - time;
+  
+  while(!radio.testCarrier())
+  {
+    backOffDelta = micros() - time;
+    if(backOffDelta>=backofSlot)
+    {
+      backoffTimer--;
+      time = micros();
+    }
+    if(backoffTimer==0)
+    {
+      return 0;
     }
   }
-  return 0;
+  return 1;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /*==============================================================================
 ** Function...: printOut
