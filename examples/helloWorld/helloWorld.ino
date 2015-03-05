@@ -66,7 +66,7 @@ typedef enum { role_sender = 1, role_receiver } role_e;
 const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
   
 role_e role = role_sender;
-unsigned char macAdd =2;
+unsigned char macAdd =5;
 
 struct statistics
 {
@@ -76,8 +76,7 @@ struct statistics
   uint16_t total_tx;
   uint16_t total_rx;
   
-  uint16_t fromA;
-  uint16_t fromB;
+  uint16_t fromNode[10];
   
   uint16_t macCDCnt;
 };
@@ -204,14 +203,7 @@ void loop(void)
       radio.writeAckPayload( 1, &fr_ack, sizeof(fr_ack) );
       */
       
-      if (fr.source == 1)
-      {
-        stats.fromA++;
-      }
-      else if (fr.source == 2)
-      {
-        stats.fromB++;
-      }
+      stats.fromNode[fr.source]++;
     }
   }
 }
@@ -345,7 +337,7 @@ void printOut(void)
   
   if( role == role_receiver )
   {
-    sprintf(s,"%d %d %d %d %d %d ",stats.fromA, stats.fromB, stats.total_rx, stats.total_tx, stats.successful_tx, stats.failed_tx);
+    sprintf(s,"%d %d %d %d %d | %d ",stats.fromNode[1], stats.fromNode[2], stats.fromNode[3], stats.fromNode[4], stats.fromNode[5], stats.total_rx);
     Serial.println(s);
     
     
@@ -360,9 +352,11 @@ void printOut(void)
   stats.total_tx = 0;
   stats.failed_tx = 0;
   stats.successful_tx = 0;
-  stats.fromA = 0;
-  stats.fromB = 0;
   stats.macCDCnt = 0;
-  
+  stats.fromNode[1] = 0;
+  stats.fromNode[2] = 0;
+  stats.fromNode[3] = 0;
+  stats.fromNode[4] = 0;
+  stats.fromNode[5] = 0;
   
 }
