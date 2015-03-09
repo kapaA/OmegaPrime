@@ -20,6 +20,7 @@
 ** =============================================================================
 */
 
+
 #include "SimpleTimer.h"
 #include <SPI.h>
 #include "nRF24L01.h"
@@ -27,12 +28,28 @@
 #include "printf.h"
 
 void printOut(void);
-
+int backOff(void);
 /*
 ** =============================================================================
 **                   DEFINES
 ** =============================================================================
 */
+
+#define DIFS      40
+#define SLOT_TIME  2
+
+/**
+ * Enumeration containing the commands for channel access
+*/
+typedef enum
+{
+    WAIT_DIFS = 0,
+    PERFORM_BACKOFF = 1,
+    SEND_RTS = 2,
+    WAIT_FOR_CTS = 3,
+    SEND_PAY = 4,
+    WAIT_FOR_ACK = 5
+}CSMA_CMD;
 
 /*
 ** =============================================================================
@@ -49,7 +66,7 @@ typedef enum { role_sender = 1, role_receiver } role_e;
 const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
   
 role_e role = role_sender;
-unsigned char macAdd = 1;
+unsigned char macAdd =5;
 
 struct statistics
 {
@@ -59,29 +76,27 @@ struct statistics
   uint16_t total_tx;
   uint16_t total_rx;
   
-  uint16_t fromA;
-  uint16_t fromB;
+  uint16_t fromNode[10];
   
   uint16_t macCDCnt;
-  
 };
 
-
-
-struct frame
+typedef struct 
 {
   unsigned char destination;
   unsigned char source;
   unsigned char sequence;
   unsigned char type;
   unsigned char data[28];
-};
+}dataFrame;
 
 statistics stats;
 
 unsigned char seq_id = 0;
 
 int macCD = 1;
+
+dataFrame fr;
 
 /*==============================================================================
 ** Function...: setup
@@ -93,7 +108,7 @@ int macCD = 1;
 
 void setup(void)
 {
-
+  randomSeed(analogRead(0));
   int routineTime = 1000;
   
   Serial.begin(57600);
@@ -103,8 +118,7 @@ void setup(void)
 
 
   radio.begin();
-  radio.enableAckPayload();
-
+  //radio.enableAckPayload();
 
   if ( role == role_sender )
   {
@@ -137,10 +151,10 @@ void setup(void)
 void loop(void)
 {
   static uint32_t message_count = 0;
+ 
   
-  frame fr;
   char s[100];
-  
+  int ret = 1;
   
   timer.run();
 
@@ -151,65 +165,35 @@ void loop(void)
     seq_id++;
     fr.sequence = seq_id;
     fr.type = 1;
+    channelAccess(WAIT_DIFS);
+    ret = channelAccess(PERFORM_BACKOFF);
     
-    
-    macCD = 1;
-    while(macCD)
+    if(0==ret)
     {
-      // Listen for a little
-      radio.startListening();
-      delayMicroseconds(128);
-      radio.stopListening();
-      // Did we get a carrier?
-      if ( radio.testCarrier() )
-      {
-        stats.macCDCnt++;
-      }
-      else
-      {
-        macCD=0;
-        radio.write( &fr, sizeof(fr) );
-        stats.total_tx++;
-
-        if ( radio.isAckPayloadAvailable() )
-        {
-          radio.read(&fr,sizeof(fr));
-          stats.successful_tx++;
-          
-          //sprintf(s,"ACK: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
-          //Serial.println(s);
-        }
-        else
-        {
-          stats.failed_tx++;
-        }
-      }
+      radio.write( &fr, sizeof(fr) );
+      stats.total_tx++;
     }
+    //ret = sendPacket();
 
-    delay(100);
+    //delay(1);
   }
 
   if ( role == role_receiver )
   {
     if ( radio.available() )
     {
-      
-      
       static unsigned long got_time;
       bool done = false;
       while (!done)
       {
         done = radio.read( &fr, sizeof(fr) );
         stats.total_rx++;
-        
         //sprintf(s,"PL: %d %d %d %d", fr.destination, fr.source, fr.sequence, fr.type);
         //Serial.println(s);
-        
       }
       
-      
-      
-      frame fr_ack;
+      /*
+      dataFrame fr_ack;
       fr_ack.source = 0;
       fr_ack.destination = fr.source;
       fr_ack.type = 2;
@@ -217,24 +201,131 @@ void loop(void)
       fr_ack.sequence = seq_id;
       
       radio.writeAckPayload( 1, &fr_ack, sizeof(fr_ack) );
+      */
       
-      if (fr.source == 1)
-      {
-        stats.fromA++;
-      }
-      else if (fr.source == 2)
-      {
-        stats.fromB++;
-        
-      }
-      
+      stats.fromNode[fr.source]++;
     }
   }
 }
 
 
 /*==============================================================================
-** Function...: loop
+** Function...: sendPacket
+** Return.....: void
+** Description: main function
+** Created....: 18.2.2015 by Achuthan
+** Modified...: dd.mm.yyyy by nn
+==============================================================================*/
+int sendPacket(void)
+{
+  return 0;
+}
+
+
+int channelAccess(unsigned char action)
+{
+  int ret = -1;
+  unsigned long time;
+  unsigned long difsDelta=0;
+  
+  switch (action)
+  {
+    case WAIT_DIFS:
+     
+      // Listen for a little
+      radio.startListening();
+      
+      ret = 0;
+      time = micros();
+      difsDelta = micros() - time;
+      while(difsDelta<DIFS)
+      {
+        while ( radio.testCarrier() )
+        {
+          //printf(".");
+          time = micros();
+        }
+        difsDelta = micros() - time;
+        //printf("DIFS %lu\n",difsDelta);
+      }
+      //printf("\n");
+    break;
+    
+    case PERFORM_BACKOFF:
+      if(backOff())
+      {
+        //if CD then return:
+        return -2;
+        printf("Carrier Detect\n");
+      }
+      else
+      {
+        //else no CD then do the transmit
+        ret = 0;
+        radio.stopListening();
+      }
+    break;
+    
+    default:
+      ret = -3;
+    break;
+  }  
+  return 0;  
+}  
+
+
+int backOff(void)
+{
+  int backofSlot = SLOT_TIME;
+  // Listen for a little
+  radio.startListening();
+  unsigned long time;
+  unsigned long backOffDelta;
+  unsigned int backoffTimer = 0;
+  
+  backoffTimer = random(1, 4); 
+  
+  time = micros();
+  backOffDelta = micros() - time;
+  
+  while(!radio.testCarrier())
+  {
+    backOffDelta = micros() - time;
+    if(backOffDelta>=backofSlot)
+    {
+      backoffTimer--;
+      time = micros();
+    }
+    if(backoffTimer==0)
+    {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*==============================================================================
+** Function...: printOut
 ** Return.....: void
 ** Description: main function
 ** Created....: 18.2.2015 by Achuthan
@@ -246,7 +337,7 @@ void printOut(void)
   
   if( role == role_receiver )
   {
-    sprintf(s,"%d %d %d %d %d %d ",stats.fromA, stats.fromB, stats.total_rx, stats.total_tx, stats.successful_tx, stats.failed_tx);
+    sprintf(s,"%d %d %d %d %d | %d ",stats.fromNode[1], stats.fromNode[2], stats.fromNode[3], stats.fromNode[4], stats.fromNode[5], stats.total_rx);
     Serial.println(s);
     
     
@@ -261,9 +352,11 @@ void printOut(void)
   stats.total_tx = 0;
   stats.failed_tx = 0;
   stats.successful_tx = 0;
-  stats.fromA = 0;
-  stats.fromB = 0;
   stats.macCDCnt = 0;
-  
+  stats.fromNode[1] = 0;
+  stats.fromNode[2] = 0;
+  stats.fromNode[3] = 0;
+  stats.fromNode[4] = 0;
+  stats.fromNode[5] = 0;
   
 }
